@@ -39,7 +39,7 @@ class PluginManager {
     if (!id || !plugin) return false;
     this._plugins.set(id, plugin);
     if (meta) this._meta.set(id, meta);
-    const displayName = meta?.name || plugin.name || id;
+    const displayName = (meta && meta.name) || plugin.name || id;
     console.log(`[PluginManager] Registered plugin: ${displayName}`);
     return true;
   }
