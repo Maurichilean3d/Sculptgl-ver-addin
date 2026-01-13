@@ -70,7 +70,7 @@ class SculptGL extends Scene {
 
     if (type === 'wheel') {
       this._mouseX = mouseX;
-      this._mouseY = this._canvasHeight - mouseY;
+      this._mouseY = mouseY;
       this._lastMouseX = mouseX;
       this._lastMouseY = mouseY;
       this.onDeviceWheel(input.wheelDelta);
@@ -79,7 +79,7 @@ class SculptGL extends Scene {
 
     if (type === 'hover') {
       this._mouseX = mouseX;
-      this._mouseY = this._canvasHeight - mouseY;
+      this._mouseY = mouseY;
       this._lastMouseX = mouseX;
       this._lastMouseY = mouseY;
       this.renderSelectOverRtt();
@@ -130,9 +130,9 @@ class SculptGL extends Scene {
     this._lastMouseX = mouseX;
     this._lastMouseY = mouseY;
 
-    // Coordenadas para picking (Y invertido para WebGL)
+    // Coordenadas para picking y esculpido (sin pre-invertir, Camera.unproject lo hace)
     this._mouseX = mouseX;
-    this._mouseY = this._canvasHeight - mouseY;
+    this._mouseY = mouseY;
 
     // ALT + Click Izquierdo = Controles de cámara
     if (input.altKey && input.buttons === 1) {
@@ -201,7 +201,7 @@ class SculptGL extends Scene {
     const mouseY = input.y;
 
     this._mouseX = mouseX;
-    this._mouseY = this._canvasHeight - mouseY;
+    this._mouseY = mouseY;
 
     if (this._isCameraAction()) {
       Multimesh.RENDER_HINT = Multimesh.CAMERA;
