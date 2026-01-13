@@ -56,7 +56,7 @@ class PluginPanel {
 
     const hint = _el('div', {
       class: 'sgl-plugin-hint',
-      text: 'Nota: habilitar/deshabilitar y desinstalar se aplican al reiniciar. “Limpiar todo” recarga la página.'
+      text: 'Nota: habilitar/deshabilitar y desinstalar se aplican al reiniciar. "Limpiar todo" recarga la página.'
     });
 
     const actions = _el('div', { class: 'sgl-plugin-actions' }, [
