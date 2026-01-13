@@ -1,0 +1,188 @@
+import { vec3 } from 'gl-matrix';
+
+var Export = {};
+
+// Constantes glTF
+var GL = {
+  BYTE: 5120,
+  UNSIGNED_BYTE: 5121,
+  SHORT: 5122,
+  UNSIGNED_SHORT: 5123,
+  UNSIGNED_INT: 5125,
+  FLOAT: 5126,
+  ARRAY_BUFFER: 34962,
+  ELEMENT_ARRAY_BUFFER: 34963
+};
+
+Export.exportGLB = function (meshes) {
+  // 1. Preparar buffers binarios
+  var bufferViews = [];
+  var accessors = [];
+  var binChunks = [];
+  var totalByteLength = 0;
+
+  var meshDefs = [];
+  var nodes = [];
+  
+  // Función auxiliar para alinear a 4 bytes (padding)
+  var pad = function (chunk) {
+    var padding = (4 - (chunk.byteLength % 4)) % 4;
+    if (padding === 0) return chunk;
+    var padded = new Uint8Array(chunk.byteLength + padding);
+    padded.set(new Uint8Array(chunk.buffer ? chunk.buffer : chunk));
+    return padded;
+  };
+
+  var addBuffer = function (array, type, componentType, target) {
+    var chunk = pad(array); // Asegurar alineación
+    
+    var byteOffset = totalByteLength;
+    var byteLength = chunk.byteLength;
+    totalByteLength += byteLength;
+    binChunks.push(chunk);
+
+    var bufferViewIndex = bufferViews.length;
+    bufferViews.push({
+      buffer: 0,
+      byteOffset: byteOffset,
+      byteLength: byteLength,
+      target: target
+    });
+
+    var accessorIndex = accessors.length;
+    var count = array.length / (type === 'VEC3' ? 3 : (type === 'VEC2' ? 2 : 1));
+    
+    // Calcular min/max para posición (requerido por glTF)
+    var min, max;
+    if (type === 'VEC3' && componentType === GL.FLOAT) {
+       min = [Infinity, Infinity, Infinity];
+       max = [-Infinity, -Infinity, -Infinity];
+       for(var k=0; k<array.length; k+=3) {
+           min[0] = Math.min(min[0], array[k]);
+           min[1] = Math.min(min[1], array[k+1]);
+           min[2] = Math.min(min[2], array[k+2]);
+           max[0] = Math.max(max[0], array[k]);
+           max[1] = Math.max(max[1], array[k+1]);
+           max[2] = Math.max(max[2], array[k+2]);
+       }
+    }
+
+    var accessor = {
+      bufferView: bufferViewIndex,
+      byteOffset: 0,
+      componentType: componentType,
+      count: count,
+      type: type
+    };
+    
+    if (min) accessor.min = min;
+    if (max) accessor.max = max;
+    
+    accessors.push(accessor);
+    return accessorIndex;
+  };
+
+  // 2. Procesar cada mesh
+  for (var i = 0; i < meshes.length; ++i) {
+    var mesh = meshes[i];
+    var vAr = mesh.getVertices(); // Float32Array
+    var fAr = mesh.getFaces();    // Uint32Array
+    var cAr = mesh.getColors();   // Float32Array
+    var matrix = mesh.getMatrix(); // Transformación global
+    
+    // Aplicar matriz al vértice antes de exportar (baking)
+    // Opcional: Podríamos exportar la matriz en el nodo, pero SculptGL suele aplicar todo.
+    var bakedVer = new Float32Array(vAr.length);
+    var v = [0,0,0];
+    for(var k=0; k<vAr.length; k+=3) {
+        v[0]=vAr[k]; v[1]=vAr[k+1]; v[2]=vAr[k+2];
+        vec3.transformMat4(v, v, matrix);
+        bakedVer[k]=v[0]; bakedVer[k+1]=v[1]; bakedVer[k+2]=v[2];
+    }
+
+    // Indices (Faces)
+    // glTF solo soporta indices UNSIGNED_SHORT (hasta 65535) o UNSIGNED_INT
+    // SculptGL usa Uint32, así que vamos seguros con UNSIGNED_INT si es necesario, 
+    // pero optimizamos a SHORT si cabe.
+    var useInt = bakedVer.length/3 > 65535;
+    var indicesType = useInt ? GL.UNSIGNED_INT : GL.UNSIGNED_SHORT;
+    var indicesArr = useInt ? fAr : new Uint16Array(fAr);
+
+    // Buffers
+    var accPos = addBuffer(bakedVer, 'VEC3', GL.FLOAT, GL.ARRAY_BUFFER);
+    var accInd = addBuffer(indicesArr, 'SCALAR', indicesType, GL.ELEMENT_ARRAY_BUFFER);
+    var accCol = addBuffer(cAr, 'VEC3', GL.FLOAT, GL.ARRAY_BUFFER);
+
+    // Definición primitiva
+    var primitive = {
+      attributes: {
+        POSITION: accPos,
+        COLOR_0: accCol
+      },
+      indices: accInd,
+      mode: 4 // TRIANGLES
+    };
+
+    meshDefs.push({ primitives: [primitive] });
+    nodes.push({ mesh: i });
+  }
+
+  // 3. Construir JSON
+  var json = {
+    asset: { version: "2.0", generator: "SculptGL" },
+    scene: 0,
+    scenes: [{ nodes: nodes.map((_, idx) => idx) }],
+    nodes: nodes,
+    meshes: meshDefs,
+    buffers: [{ byteLength: totalByteLength }],
+    bufferViews: bufferViews,
+    accessors: accessors
+  };
+
+  // 4. Empaquetar GLB (Header + JSON Chunk + BIN Chunk)
+  var jsonStr = JSON.stringify(json);
+  
+  // Padding del JSON a 4 bytes con espacios
+  while (jsonStr.length % 4 !== 0) jsonStr += ' ';
+
+  var jsonBytes = new TextEncoder().encode(jsonStr);
+  var jsonLength = jsonBytes.length;
+
+  var totalSize = 
+    12 + // Header (Magic + Version + Length)
+    8 + jsonLength + // JSON Chunk Header + Payload
+    8 + totalByteLength; // BIN Chunk Header + Payload
+
+  var finalBuffer = new Uint8Array(totalSize);
+  var view = new DataView(finalBuffer.buffer);
+  
+  var offset = 0;
+
+  // Header GLB
+  view.setUint32(0, 0x46546C67, true); // Magic 'glTF'
+  view.setUint32(4, 2, true);          // Version 2
+  view.setUint32(8, totalSize, true);  // Total Length
+  offset += 12;
+
+  // Chunk 0: JSON
+  view.setUint32(offset, jsonLength, true); // Length
+  view.setUint32(offset + 4, 0x4E4F534A, true); // Type 'JSON'
+  offset += 8;
+  finalBuffer.set(jsonBytes, offset);
+  offset += jsonLength;
+
+  // Chunk 1: BIN
+  view.setUint32(offset, totalByteLength, true); // Length
+  view.setUint32(offset + 4, 0x004E4942, true); // Type 'BIN'
+  offset += 8;
+
+  // Escribir los trozos binarios
+  for (var j = 0; j < binChunks.length; j++) {
+      finalBuffer.set(new Uint8Array(binChunks[j].buffer || binChunks[j]), offset);
+      offset += binChunks[j].byteLength;
+  }
+
+  return new Blob([finalBuffer], { type: 'model/gltf-binary' });
+};
+
+export default Export;
