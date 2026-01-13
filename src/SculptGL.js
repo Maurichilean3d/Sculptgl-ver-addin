@@ -165,31 +165,49 @@ class SculptGL extends Scene {
 
     // Click Izquierdo: Picking + Plugin/Escultura
     if (input.buttons === 1) {
+      console.log('[TOUCH DEBUG] onDeviceDown - buttons=1');
+      console.log('[TOUCH DEBUG] pointerType:', input.pointerType);
+      console.log('[TOUCH DEBUG] input coords - x:', input.x, 'y:', input.y);
+      console.log('[TOUCH DEBUG] mouseX:', mouseX, 'mouseY:', mouseY);
+      console.log('[TOUCH DEBUG] this._mouseX:', this._mouseX, 'this._mouseY:', this._mouseY);
+      console.log('[TOUCH DEBUG] canvasHeight:', this._canvasHeight, 'canvasWidth:', this._canvasWidth);
+
       const mesh = this.getMesh();
       const picking = this.getPicking();
 
+      console.log('[TOUCH DEBUG] mesh exists:', !!mesh);
+      console.log('[TOUCH DEBUG] picking exists:', !!picking);
+
       if (!mesh || !picking) {
         // No hay malla, default a rotar cámara
+        console.log('[TOUCH DEBUG] No mesh/picking - setting CAMERA_ROTATE');
         this._action = Enums.Action.CAMERA_ROTATE;
         this._camera.start(mouseX, mouseY);
         return;
       }
 
       // PICKING: ¿Tocamos la malla?
+      console.log('[TOUCH DEBUG] Calling picking.intersectionMouse with:', this._mouseX, this._mouseY);
       const intersected = picking.intersectionMouse(mesh, this._mouseX, this._mouseY);
+      console.log('[TOUCH DEBUG] intersectionMouse returned:', intersected);
 
       if (intersected) {
+        console.log('[TOUCH DEBUG] Intersection detected - trying plugin');
         const pluginHandled = this._pluginManager.tryHandleInput('start', input, picking);
+        console.log('[TOUCH DEBUG] pluginHandled:', pluginHandled);
 
         if (pluginHandled) {
           this._action = Enums.Action.NOTHING;
           return;
         }
 
+        console.log('[TOUCH DEBUG] Setting SCULPT_EDIT action');
         this._action = Enums.Action.SCULPT_EDIT;
-        this._sculptManager.start(input.shiftKey);
+        const sculptStarted = this._sculptManager.start(input.shiftKey);
+        console.log('[TOUCH DEBUG] sculptManager.start returned:', sculptStarted);
       } else {
         // No tocamos: rotar cámara
+        console.log('[TOUCH DEBUG] No intersection - setting CAMERA_ROTATE');
         this._action = Enums.Action.CAMERA_ROTATE;
         this._camera.start(mouseX, mouseY);
       }
@@ -203,7 +221,10 @@ class SculptGL extends Scene {
     this._mouseX = mouseX;
     this._mouseY = this._canvasHeight - mouseY;
 
+    console.log('[TOUCH DEBUG] onDeviceMove - action:', this._action, 'mouseX:', mouseX, 'mouseY:', mouseY);
+
     if (this._isCameraAction()) {
+      console.log('[TOUCH DEBUG] Is camera action');
       Multimesh.RENDER_HINT = Multimesh.CAMERA;
 
       const dx = mouseX - this._lastMouseX;
@@ -211,6 +232,7 @@ class SculptGL extends Scene {
       const speedFactor = this._cameraSpeed / this._canvasHeight;
 
       if (this._action === Enums.Action.CAMERA_ROTATE) {
+        console.log('[TOUCH DEBUG] Calling camera.rotate');
         this._camera.rotate(mouseX, mouseY);
       } else if (this._action === Enums.Action.CAMERA_PAN) {
         this._camera.translate(dx * speedFactor, dy * speedFactor);
@@ -220,6 +242,7 @@ class SculptGL extends Scene {
 
       this.render();
     } else if (this._action === Enums.Action.SCULPT_EDIT) {
+      console.log('[TOUCH DEBUG] Is sculpt edit action');
       const picking = this.getPicking();
       const pluginHandled = this._pluginManager.tryHandleInput('move', input, picking);
 

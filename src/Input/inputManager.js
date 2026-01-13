@@ -55,17 +55,21 @@ class InputManager {
 
   _processGesture(e, phase) {
     const pointers = Array.from(this._pointers.values());
-    
+    console.log('[INPUT DEBUG] _processGesture - phase:', phase, 'pointers:', pointers.length);
+
     // 1 Dedo / Mouse
     if (pointers.length === 1) {
       const p = pointers[0];
+      console.log('[INPUT DEBUG] Single pointer - type:', p.type, 'pos:', p.x, p.y);
       this._updateNormalizedCoords(p.x, p.y);
-      
+      console.log('[INPUT DEBUG] Normalized coords - nX:', this.current.nX, 'nY:', this.current.nY);
+
       this.current.isDown = true;
       this.current.buttons = (p.type === 'mouse') ? (e.buttons || 1) : 1;
       this.current.pointerType = p.type;
       this._updateModifiers(e);
-      
+
+      console.log('[INPUT DEBUG] Calling onInput with phase:', phase, 'buttons:', this.current.buttons);
       if (this.onInput) this.onInput(phase, this.current, e);
       return;
     }
