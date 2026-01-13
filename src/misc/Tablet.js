@@ -1,10 +1,7 @@
 var Tablet = {
   radiusFactor: 0.75, // the pen pressure acts on the tool's radius
   intensityFactor: 0.0, // the pen pressure acts on the tool's intensity
-  pressure: 0.5,
-  pointerType: 'mouse',
-  mouseX: 0,
-  mouseY: 0
+  pressure: 0.5
 };
 
 Tablet.getPressureIntensity = function () {

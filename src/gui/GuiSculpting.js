@@ -92,10 +92,7 @@ class GuiSculpting {
   onChangeTool(newValue) {
     GuiSculptingTools.hide(this._sculptManager.getToolIndex());
     this._sculptManager.setToolIndex(newValue);
-        // Hook para plugins: avisar cambio de herramienta
-    const pm = this._main.getPluginManager && this._main.getPluginManager();
-    if (pm) pm.onToolChange(newValue);
-GuiSculptingTools.show(newValue);
+    GuiSculptingTools.show(newValue);
 
     var showContinuous = this._sculptManager.canBeContinuous() === true;
     this._ctrlContinuous.setVisibility(showContinuous);

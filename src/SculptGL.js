@@ -1,300 +1,415 @@
 import 'misc/Polyfill';
-import Enums from 'misc/Enums';
-import Multimesh from 'mesh/multiresolution/Multimesh';
-import Scene from 'Scene';
+import { vec3 } from 'gl-matrix';
+import { Manager as HammerManager, Pan, Pinch, Tap } from 'hammerjs';
 import Tablet from 'misc/Tablet';
-import InputManager from 'Input/inputManager';
+import Enums from 'misc/Enums';
+import Utils from 'misc/Utils';
+import Scene from 'Scene';
+import Multimesh from 'mesh/multiresolution/Multimesh';
 import PluginManager from './PluginManager';
 
+var MOUSE_LEFT = 1;
+var MOUSE_MIDDLE = 2;
+var MOUSE_RIGHT = 3;
+
+// Manage events
 class SculptGL extends Scene {
+
   constructor() {
     super();
 
+    // Plugin manager for add-on support
     this._pluginManager = new PluginManager(this);
-    this._inputManager = new InputManager(this._canvas);
-    this._inputManager.onInput = this._handleInput.bind(this);
 
-    // Variables de estado
+    // all x and y position are canvas based
+
+    // controllers stuffs
     this._mouseX = 0;
     this._mouseY = 0;
     this._lastMouseX = 0;
     this._lastMouseY = 0;
+    this._lastScale = 0;
+
+    // NOTHING, MASK_EDIT, SCULPT_EDIT, CAMERA_ZOOM, CAMERA_ROTATE, CAMERA_PAN, CAMERA_PAN_ZOOM_ALT
     this._action = Enums.Action.NOTHING;
-
+    this._lastNbPointers = 0;
     this._isWheelingIn = false;
-    this._timerEndWheel = null;
 
-    this.addSystemEvents();
-  }
+    // masking
+    this._maskX = 0;
+    this._maskY = 0;
+    this._hammer = new HammerManager(this._canvas);
 
-  start() {
-    super.start();
+    this._eventProxy = {};
 
-    // Cargar plugins persistidos (async)
-    if (this._pluginManager) {
-      this._pluginManager.loadPersisted().catch((e) => {
-        console.error('Error loading persisted plugins:', e);
-      });
-    }
-  }
-
-  applyRender() {
-    super.applyRender();
-
-    // Hook de renderizado para plugins
-    if (this._pluginManager) {
-      this._pluginManager.onRender();
-    }
+    this.initHammer();
+    this.addEvents();
   }
 
   getPluginManager() {
     return this._pluginManager;
   }
 
-  // =========================================================================
-  // INPUT MANAGER
-  // =========================================================================
+  addEvents() {
+    var canvas = this._canvas;
 
-  _handleInput(type, input, rawEvent) {
-    const mouseX = input.nX * this._canvasWidth;
-    const mouseY = input.nY * this._canvasHeight;
-    const which = this._buttonsToWhich(input.buttons);
+    var cbMouseWheel = this.onMouseWheel.bind(this);
+    var cbOnPointer = this.onPointer.bind(this);
 
-    if (typeof input.pressure === 'number') {
-      Tablet.pressure = input.pressure;
+    // pointer
+    canvas.addEventListener('pointerdown', cbOnPointer, false);
+    canvas.addEventListener('pointermove', cbOnPointer, false);
+
+    // mouse
+    canvas.addEventListener('mousedown', this.onMouseDown.bind(this), false);
+    canvas.addEventListener('mouseup', this.onMouseUp.bind(this), false);
+    canvas.addEventListener('mouseout', this.onMouseOut.bind(this), false);
+    canvas.addEventListener('mouseover', this.onMouseOver.bind(this), false);
+    canvas.addEventListener('mousemove', Utils.throttle(this.onMouseMove.bind(this), 16.66), false);
+    canvas.addEventListener('mousewheel', cbMouseWheel, false);
+    canvas.addEventListener('DOMMouseScroll', cbMouseWheel, false);
+
+    //key
+    window.addEventListener('keydown', this.onKeyDown.bind(this), false);
+    window.addEventListener('keyup', this.onKeyUp.bind(this), false);
+
+    var cbLoadFiles = this.loadFiles.bind(this);
+    var cbStopAndPrevent = this.stopAndPrevent.bind(this);
+    // misc
+    canvas.addEventListener('webglcontextlost', this.onContextLost.bind(this), false);
+    canvas.addEventListener('webglcontextrestored', this.onContextRestored.bind(this), false);
+    window.addEventListener('dragenter', cbStopAndPrevent, false);
+    window.addEventListener('dragover', cbStopAndPrevent, false);
+    window.addEventListener('drop', cbLoadFiles, false);
+    document.getElementById('fileopen').addEventListener('change', cbLoadFiles, false);
+  }
+
+  onPointer(event) {
+    Tablet.pressure = event.pressure;
+  }
+
+  initHammer() {
+    this._hammer.options.enable = true;
+    this._initHammerRecognizers();
+    this._initHammerEvents();
+  }
+
+  _initHammerRecognizers() {
+    var hm = this._hammer;
+    // double tap
+    hm.add(new Tap({
+      event: 'doubletap',
+      pointers: 1,
+      taps: 2,
+      time: 250, // def : 250.  Maximum press time in ms.
+      interval: 450, // def : 300. Maximum time in ms between multiple taps.
+      threshold: 5, // def : 2. While doing a tap some small movement is allowed.
+      posThreshold: 50 // def : 30. The maximum position difference between multiple taps.
+    }));
+
+    // double tap 2 fingers
+    hm.add(new Tap({
+      event: 'doubletap2fingers',
+      pointers: 2,
+      taps: 2,
+      time: 250,
+      interval: 450,
+      threshold: 5,
+      posThreshold: 50
+    }));
+
+    // pan
+    hm.add(new Pan({
+      event: 'pan',
+      pointers: 0,
+      threshold: 0
+    }));
+
+    // pinch
+    hm.add(new Pinch({
+      event: 'pinch',
+      pointers: 2,
+      threshold: 0.1 // Set a minimal thresold on pinch event, to be detected after pan
+    }));
+    hm.get('pinch').recognizeWith(hm.get('pan'));
+  }
+
+  _initHammerEvents() {
+    var hm = this._hammer;
+    hm.on('panstart', this.onPanStart.bind(this));
+    hm.on('panmove', this.onPanMove.bind(this));
+    hm.on('panend pancancel', this.onPanEnd.bind(this));
+
+    hm.on('doubletap', this.onDoubleTap.bind(this));
+    hm.on('doubletap2fingers', this.onDoubleTap2Fingers.bind(this));
+    hm.on('pinchstart', this.onPinchStart.bind(this));
+    hm.on('pinchin pinchout', this.onPinchInOut.bind(this));
+  }
+
+  stopAndPrevent(event) {
+    event.stopPropagation();
+    event.preventDefault();
+  }
+
+  onContextLost() {
+    window.alert('Oops... WebGL context lost.');
+  }
+
+  onContextRestored() {
+    window.alert('Wow... Context is restored.');
+  }
+
+  ////////////////
+  // KEY EVENTS
+  ////////////////
+  onKeyDown(e) {
+    this._gui.callFunc('onKeyDown', e);
+  }
+
+  onKeyUp(e) {
+    this._gui.callFunc('onKeyUp', e);
+  }
+
+  ////////////////
+  // MOBILE EVENTS
+  ////////////////
+  onPanStart(e) {
+    if (e.pointerType === 'mouse')
+      return;
+    this._focusGui = false;
+    var evProxy = this._eventProxy;
+    evProxy.pageX = e.center.x;
+    evProxy.pageY = e.center.y;
+    this.onPanUpdateNbPointers(Math.min(3, e.pointers.length));
+  }
+
+  onPanMove(e) {
+    if (e.pointerType === 'mouse')
+      return;
+    var evProxy = this._eventProxy;
+    evProxy.pageX = e.center.x;
+    evProxy.pageY = e.center.y;
+
+    var nbPointers = Math.min(3, e.pointers.length);
+    if (nbPointers !== this._lastNbPointers) {
+      this.onDeviceUp();
+      this.onPanUpdateNbPointers(nbPointers);
     }
+    this.onDeviceMove(evProxy);
 
-    Tablet.pointerType = input.pointerType || Tablet.pointerType;
-    Tablet.mouseX = mouseX;
-    Tablet.mouseY = mouseY;
+    if (this._isIOS()) {
+      window.clearTimeout(this._timerResetPointer);
+      this._timerResetPointer = window.setTimeout(function () {
+        this._lastNbPointers = 0;
+      }.bind(this), 60);
+    }
+  }
 
-    if (type === 'wheel') {
-      this._mouseX = mouseX;
-      this._mouseY = this._canvasHeight - mouseY;
-      this._lastMouseX = mouseX;
-      this._lastMouseY = mouseY;
-      this.onDeviceWheel(input.wheelDelta);
+  _isIOS() {
+    if (this._isIOS !== undefined) return this._isIOS;
+    this._isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    return this._isIOS;
+  }
+
+  onPanUpdateNbPointers(nbPointers) {
+    // called on panstart or panmove (not consistent)
+    var evProxy = this._eventProxy;
+    evProxy.which = nbPointers === 1 && this._lastNbPointers >= 1 ? 3 : nbPointers;
+    this._lastNbPointers = nbPointers;
+    this.onDeviceDown(evProxy);
+  }
+
+  onPanEnd(e) {
+    if (e.pointerType === 'mouse')
+      return;
+    this.onDeviceUp();
+    // we need to detect when all fingers are released
+    window.setTimeout(function () {
+      if (!e.pointers.length) this._lastNbPointers = 0;
+    }.bind(this), 60);
+  }
+
+  onDoubleTap(e) {
+    if (this._focusGui) {
       return;
     }
 
-    if (type === 'hover') {
-      this._mouseX = mouseX;
-      this._mouseY = this._canvasHeight - mouseY;
-      this._lastMouseX = mouseX;
-      this._lastMouseY = mouseY;
-      this.renderSelectOverRtt();
-      return;
+    var evProxy = this._eventProxy;
+    evProxy.pageX = e.center.x;
+    evProxy.pageY = e.center.y;
+    this.setMousePosition(evProxy);
+
+    var picking = this._picking;
+    var res = picking.intersectionMouseMeshes();
+    var cam = this._camera;
+    var pivot = [0.0, 0.0, 0.0];
+    if (!res) {
+      return this.resetCameraMeshes();
     }
 
-    const inputPayload = {
-      x: mouseX,
-      y: mouseY,
-      buttons: which,
-      pressure: Tablet.pressure,
-      pointerType: Tablet.pointerType,
-      altKey: input.altKey,
-      ctrlKey: input.ctrlKey,
-      shiftKey: input.shiftKey
+    vec3.transformMat4(pivot, picking.getIntersectionPoint(), picking.getMesh().getMatrix());
+    var zoom = cam._trans[2];
+    if (!cam.isOrthographic()) {
+      zoom = Math.min(zoom, vec3.dist(pivot, cam.computePosition()));
+    }
+
+    cam.setAndFocusOnPivot(pivot, zoom);
+    this.render();
+  }
+
+  onDoubleTap2Fingers() {
+    if (this._focusGui) return;
+    this.resetCameraMeshes();
+  }
+
+  onPinchStart(e) {
+    this._focusGui = false;
+    this._lastScale = e.scale;
+  }
+
+  onPinchInOut(e) {
+    var dir = (e.scale - this._lastScale) * 25;
+    this._lastScale = e.scale;
+    this.onDeviceWheel(dir);
+  }
+
+  resetCameraMeshes(meshes) {
+    if (!meshes) meshes = this._meshes;
+
+    if (meshes.length > 0) {
+      var pivot = [0.0, 0.0, 0.0];
+      var box = this.computeBoundingBoxMeshes(meshes);
+      var zoom = 0.8 * this.computeRadiusFromBoundingBox(box);
+      zoom *= this._camera.computeFrustumFit();
+      vec3.set(pivot, (box[0] + box[3]) * 0.5, (box[1] + box[4]) * 0.5, (box[2] + box[5]) * 0.5);
+      this._camera.setAndFocusOnPivot(pivot, zoom);
+    } else {
+      this._camera.resetView();
+    }
+
+    this.render();
+  }
+
+  ////////////////
+  // LOAD FILES
+  ////////////////
+  getFileType(name) {
+    var lower = name.toLowerCase();
+    if (lower.endsWith('.obj')) return 'obj';
+    if (lower.endsWith('.sgl')) return 'sgl';
+    if (lower.endsWith('.stl')) return 'stl';
+    if (lower.endsWith('.ply')) return 'ply';
+    return;
+  }
+
+  loadFiles(event) {
+    event.stopPropagation();
+    event.preventDefault();
+    var files = event.dataTransfer ? event.dataTransfer.files : event.target.files;
+    for (var i = 0, nb = files.length; i < nb; ++i) {
+      var file = files[i];
+      var fileType = this.getFileType(file.name);
+      this.readFile(file, fileType);
+    }
+  }
+
+  readFile(file, ftype) {
+    var fileType = ftype || this.getFileType(file.name);
+    if (!fileType)
+      return;
+
+    var reader = new FileReader();
+    var self = this;
+    reader.onload = function (evt) {
+      self.loadScene(evt.target.result, fileType);
+      document.getElementById('fileopen').value = '';
     };
 
-    if (type === 'start') {
-      this.onDeviceDown(inputPayload, rawEvent);
-      return;
-    }
-
-    if (type === 'move') {
-      this.onDeviceMove(inputPayload, rawEvent);
-      return;
-    }
-
-    if (type === 'end') {
-      this.onDeviceUp(inputPayload, rawEvent);
-    }
+    if (fileType === 'obj')
+      reader.readAsText(file);
+    else
+      reader.readAsArrayBuffer(file);
   }
 
-  _buttonsToWhich(buttons) {
-    if (buttons & 4) return 2;
-    if (buttons & 2) return 3;
-    if (buttons & 1) return 1;
-    return 0;
+  ////////////////
+  // MOUSE EVENTS
+  ////////////////
+  onMouseDown(event) {
+    event.stopPropagation();
+    event.preventDefault();
+
+    this._gui.callFunc('onMouseDown', event);
+    this.onDeviceDown(event);
   }
 
-  // =========================================================================
-  // EVENTOS DE DISPOSITIVO (FLUJO ORIGINAL RESTAURADO)
-  // =========================================================================
+  onMouseMove(event) {
+    event.stopPropagation();
+    event.preventDefault();
 
-  onDeviceDown(input) {
-    const mouseX = input.x;
-    const mouseY = input.y;
-
-    this._lastMouseX = mouseX;
-    this._lastMouseY = mouseY;
-
-    // Coordenadas para picking (Y invertido para WebGL)
-    this._mouseX = mouseX;
-    this._mouseY = this._canvasHeight - mouseY;
-
-    // ALT + Click Izquierdo = Controles de cámara
-    if (input.altKey && input.buttons === 1) {
-      if (input.ctrlKey) {
-        this._action = Enums.Action.CAMERA_ZOOM;
-      } else if (input.shiftKey) {
-        this._action = Enums.Action.CAMERA_PAN;
-      } else {
-        this._action = Enums.Action.CAMERA_ROTATE;
-      }
-      this._camera.start(mouseX, mouseY);
-      return;
-    }
-
-    // Click Derecho = Rotar cámara
-    if (input.buttons === 3) {
-      this._action = input.ctrlKey ?
-        Enums.Action.CAMERA_ZOOM :
-        (input.shiftKey ? Enums.Action.CAMERA_PAN : Enums.Action.CAMERA_ROTATE);
-      this._camera.start(mouseX, mouseY);
-      return;
-    }
-
-    // Click Medio / Gesto pan = Pan cámara
-    if (input.buttons === 2) {
-      this._action = Enums.Action.CAMERA_PAN;
-      this._camera.start(mouseX, mouseY);
-      return;
-    }
-
-    // Click Izquierdo: Picking + Plugin/Escultura
-    if (input.buttons === 1) {
-      console.log('[TOUCH DEBUG] onDeviceDown - buttons=1');
-      console.log('[TOUCH DEBUG] pointerType:', input.pointerType);
-      console.log('[TOUCH DEBUG] input coords - x:', input.x, 'y:', input.y);
-      console.log('[TOUCH DEBUG] mouseX:', mouseX, 'mouseY:', mouseY);
-      console.log('[TOUCH DEBUG] this._mouseX:', this._mouseX, 'this._mouseY:', this._mouseY);
-      console.log('[TOUCH DEBUG] canvasHeight:', this._canvasHeight, 'canvasWidth:', this._canvasWidth);
-
-      const mesh = this.getMesh();
-      const picking = this.getPicking();
-
-      console.log('[TOUCH DEBUG] mesh exists:', !!mesh);
-      console.log('[TOUCH DEBUG] picking exists:', !!picking);
-
-      if (!mesh || !picking) {
-        // No hay malla, default a rotar cámara
-        console.log('[TOUCH DEBUG] No mesh/picking - setting CAMERA_ROTATE');
-        this._action = Enums.Action.CAMERA_ROTATE;
-        this._camera.start(mouseX, mouseY);
-        return;
-      }
-
-      // PICKING: ¿Tocamos la malla?
-      console.log('[TOUCH DEBUG] Calling picking.intersectionMouse with:', this._mouseX, this._mouseY);
-      const intersected = picking.intersectionMouse(mesh, this._mouseX, this._mouseY);
-      console.log('[TOUCH DEBUG] intersectionMouse returned:', intersected);
-
-      if (intersected) {
-        console.log('[TOUCH DEBUG] Intersection detected - trying plugin');
-        const pluginHandled = this._pluginManager.tryHandleInput('start', input, picking);
-        console.log('[TOUCH DEBUG] pluginHandled:', pluginHandled);
-
-        if (pluginHandled) {
-          this._action = Enums.Action.NOTHING;
-          return;
-        }
-
-        console.log('[TOUCH DEBUG] Setting SCULPT_EDIT action');
-        this._action = Enums.Action.SCULPT_EDIT;
-        const sculptStarted = this._sculptManager.start(input.shiftKey);
-        console.log('[TOUCH DEBUG] sculptManager.start returned:', sculptStarted);
-      } else {
-        // No tocamos: rotar cámara
-        console.log('[TOUCH DEBUG] No intersection - setting CAMERA_ROTATE');
-        this._action = Enums.Action.CAMERA_ROTATE;
-        this._camera.start(mouseX, mouseY);
-      }
-    }
+    this._gui.callFunc('onMouseMove', event);
+    this.onDeviceMove(event);
   }
 
-  onDeviceMove(input) {
-    const mouseX = input.x;
-    const mouseY = input.y;
-
-    this._mouseX = mouseX;
-    this._mouseY = this._canvasHeight - mouseY;
-
-    console.log('[TOUCH DEBUG] onDeviceMove - action:', this._action, 'mouseX:', mouseX, 'mouseY:', mouseY);
-
-    if (this._isCameraAction()) {
-      console.log('[TOUCH DEBUG] Is camera action');
-      Multimesh.RENDER_HINT = Multimesh.CAMERA;
-
-      const dx = mouseX - this._lastMouseX;
-      const dy = mouseY - this._lastMouseY;
-      const speedFactor = this._cameraSpeed / this._canvasHeight;
-
-      if (this._action === Enums.Action.CAMERA_ROTATE) {
-        console.log('[TOUCH DEBUG] Calling camera.rotate');
-        this._camera.rotate(mouseX, mouseY);
-      } else if (this._action === Enums.Action.CAMERA_PAN) {
-        this._camera.translate(dx * speedFactor, dy * speedFactor);
-      } else if (this._action === Enums.Action.CAMERA_ZOOM) {
-        this._camera.zoom((dx + dy) * speedFactor);
-      }
-
-      this.render();
-    } else if (this._action === Enums.Action.SCULPT_EDIT) {
-      console.log('[TOUCH DEBUG] Is sculpt edit action');
-      const picking = this.getPicking();
-      const pluginHandled = this._pluginManager.tryHandleInput('move', input, picking);
-
-      if (!pluginHandled) {
-        this._sculptManager.preUpdate();
-        this._sculptManager.update(this);
-        Multimesh.RENDER_HINT = Multimesh.SCULPT;
-
-        if (this.getMesh().isDynamic) {
-          this._gui.updateMeshInfo();
-        }
-
-        this.render();
-      }
-    } else {
-      this.renderSelectOverRtt();
-    }
-
-    this._lastMouseX = mouseX;
-    this._lastMouseY = mouseY;
+  onMouseOver(event) {
+    this._focusGui = false;
+    this._gui.callFunc('onMouseOver', event);
   }
 
-  onDeviceUp(input) {
-    if (this._pluginManager.hasActivePlugin()) {
-      const picking = this.getPicking();
-      this._pluginManager.tryHandleInput('end', { ...input, buttons: 0, pressure: 0 }, picking);
-    }
+  onMouseOut(event) {
+    this._focusGui = true;
+    this._gui.callFunc('onMouseOut', event);
+    this.onMouseUp(event);
+  }
 
-    if (this._action === Enums.Action.SCULPT_EDIT) {
-      this._sculptManager.end();
+  onMouseUp(event) {
+    event.preventDefault();
+
+    this._gui.callFunc('onMouseUp', event);
+    this.onDeviceUp();
+  }
+
+  onMouseWheel(event) {
+    event.stopPropagation();
+    event.preventDefault();
+
+    this._gui.callFunc('onMouseWheel', event);
+    var dir = event.wheelDelta === undefined ? -event.detail : event.wheelDelta;
+    this.onDeviceWheel(dir > 0 ? 1 : -1);
+  }
+
+  ////////////////
+  // HANDLES EVENTS
+  ////////////////
+  onDeviceUp() {
+    this.setCanvasCursor('default');
+    Multimesh.RENDER_HINT = Multimesh.NONE;
+    this._sculptManager.end();
+
+    if (this._action === Enums.Action.MASK_EDIT && this._mesh) {
+
+      if (this._lastMouseX === this._maskX && this._lastMouseY === this._maskY)
+        this.getSculptManager().getTool(Enums.Tools.MASKING).invert();
+      else
+        this.getSculptManager().getTool(Enums.Tools.MASKING).clear();
+
     }
 
     this._action = Enums.Action.NOTHING;
-    this.setCanvasCursor('default');
-    Multimesh.RENDER_HINT = Multimesh.NONE;
     this.render();
+    this._stateManager.cleanNoop();
   }
 
   onDeviceWheel(dir) {
-    if (Math.abs(dir) > 0.0 && !this._isWheelingIn) {
+    if (dir > 0.0 && !this._isWheelingIn) {
       this._isWheelingIn = true;
       this._camera.start(this._mouseX, this._mouseY);
     }
-
     this._camera.zoom(dir * 0.02);
     Multimesh.RENDER_HINT = Multimesh.CAMERA;
     this.render();
-
-    if (this._timerEndWheel) {
+    // workaround for "end mouse wheel" event
+    if (this._timerEndWheel)
       window.clearTimeout(this._timerEndWheel);
-    }
-
     this._timerEndWheel = window.setTimeout(this._endWheel.bind(this), 300);
   }
 
@@ -304,114 +419,109 @@ class SculptGL extends Scene {
     this.render();
   }
 
-  _isCameraAction() {
-    return this._action === Enums.Action.CAMERA_ROTATE ||
-      this._action === Enums.Action.CAMERA_PAN ||
-      this._action === Enums.Action.CAMERA_ZOOM;
+  setMousePosition(event) {
+    this._mouseX = this._pixelRatio * (event.pageX - this._canvasOffsetLeft);
+    this._mouseY = this._pixelRatio * (event.pageY - this._canvasOffsetTop);
   }
 
-  // =========================================================================
-  // EVENTOS DEL SISTEMA (NO pointer/touch aquí)
-  // =========================================================================
+  onDeviceDown(event) {
+    if (this._focusGui)
+      return;
 
-  addSystemEvents() {
-    const canvas = this._canvas;
+    this.setMousePosition(event);
 
-    // Keyboard
-    window.addEventListener('keydown', this.onKeyDown.bind(this), false);
-    window.addEventListener('keyup', this.onKeyUp.bind(this), false);
+    var mouseX = this._mouseX;
+    var mouseY = this._mouseY;
+    var button = event.which;
 
-    // Drag & Drop
-    const cbLoadFiles = this.loadFiles.bind(this);
-    const cbStopAndPrevent = this.stopAndPrevent.bind(this);
-    window.addEventListener('dragenter', cbStopAndPrevent, false);
-    window.addEventListener('dragover', cbStopAndPrevent, false);
-    window.addEventListener('drop', cbLoadFiles, false);
+    var canEdit = false;
+    if (button === MOUSE_LEFT)
+      canEdit = this._sculptManager.start(event.shiftKey);
 
-    // WebGL context
-    canvas.addEventListener('webglcontextlost', this.onContextLost.bind(this), false);
-    canvas.addEventListener('webglcontextrestored', this.onContextRestored.bind(this), false);
+    if (button === MOUSE_LEFT && canEdit)
+      this.setCanvasCursor('none');
 
-    // File input
-    const fileInput = document.getElementById('fileopen');
-    if (fileInput) {
-      fileInput.addEventListener('change', cbLoadFiles, false);
-    }
+    if (button === MOUSE_RIGHT && event.ctrlKey)
+      this._action = Enums.Action.CAMERA_ZOOM;
+    else if (button === MOUSE_MIDDLE)
+      this._action = Enums.Action.CAMERA_PAN;
+    else if (!canEdit && event.ctrlKey) {
+      this._maskX = mouseX;
+      this._maskY = mouseY;
+      this._action = Enums.Action.MASK_EDIT;
+    } else if ((!canEdit || button === MOUSE_RIGHT) && event.altKey)
+      this._action = Enums.Action.CAMERA_PAN_ZOOM_ALT;
+    else if (button === MOUSE_RIGHT || (button === MOUSE_LEFT && !canEdit))
+      this._action = Enums.Action.CAMERA_ROTATE;
+    else
+      this._action = Enums.Action.SCULPT_EDIT;
+
+    if (this._action === Enums.Action.CAMERA_ROTATE || this._action === Enums.Action.CAMERA_ZOOM)
+      this._camera.start(mouseX, mouseY);
+
+    this._lastMouseX = mouseX;
+    this._lastMouseY = mouseY;
   }
 
-  stopAndPrevent(event) {
-    event.stopPropagation();
-    event.preventDefault();
+  getSpeedFactor() {
+    return this._cameraSpeed / (this._canvasHeight * this.getPixelRatio());
   }
 
-  onContextLost() {
-    window.alert('Oops… WebGL context lost.');
-  }
+  onDeviceMove(event) {
+    if (this._focusGui)
+      return;
+    this.setMousePosition(event);
 
-  onContextRestored() {
-    window.alert('Wow… Context is restored.');
-  }
+    var mouseX = this._mouseX;
+    var mouseY = this._mouseY;
+    var action = this._action;
+    var speedFactor = this.getSpeedFactor();
 
-  onKeyDown(e) {
-    this._gui.callFunc('onKeyDown', e);
-  }
+    if (action === Enums.Action.CAMERA_ZOOM || (action === Enums.Action.CAMERA_PAN_ZOOM_ALT && !event.altKey)) {
 
-  onKeyUp(e) {
-    this._gui.callFunc('onKeyUp', e);
-  }
+      Multimesh.RENDER_HINT = Multimesh.CAMERA;
+      this._camera.zoom((mouseX - this._lastMouseX + mouseY - this._lastMouseY) * speedFactor);
+      this.render();
 
-  onMouseWheel(event) {
-    event.stopPropagation();
-    event.preventDefault();
-    this._gui.callFunc('onMouseWheel', event);
+    } else if (action === Enums.Action.CAMERA_PAN_ZOOM_ALT || action === Enums.Action.CAMERA_PAN) {
 
-    const dir = event.wheelDelta === undefined ? -event.detail : event.wheelDelta;
-    this.onDeviceWheel(dir > 0 ? 1 : -1);
-  }
+      Multimesh.RENDER_HINT = Multimesh.CAMERA;
+      this._camera.translate((mouseX - this._lastMouseX) * speedFactor, (mouseY - this._lastMouseY) * speedFactor);
+      this.render();
 
-  // =========================================================================
-  // CARGA DE ARCHIVOS
-  // =========================================================================
+    } else if (action === Enums.Action.CAMERA_ROTATE) {
 
-  getFileType(name) {
-    const lower = name.toLowerCase();
-    if (lower.endsWith('.obj')) return 'obj';
-    if (lower.endsWith('.sgl')) return 'sgl';
-    if (lower.endsWith('.stl')) return 'stl';
-    if (lower.endsWith('.ply')) return 'ply';
-    if (lower.endsWith('.glb')) return 'glb';
-    if (lower.endsWith('.gltf')) return 'glb';
-    return null;
-  }
+      Multimesh.RENDER_HINT = Multimesh.CAMERA;
+      if (!event.shiftKey)
+        this._camera.rotate(mouseX, mouseY);
+      this.render();
 
-  loadFiles(event) {
-    event.stopPropagation();
-    event.preventDefault();
-
-    const files = event.dataTransfer ? event.dataTransfer.files : event.target.files;
-    for (let i = 0, nb = files.length; i < nb; ++i) {
-      this.readFile(files[i]);
-    }
-  }
-
-  readFile(file) {
-    const fileType = this.getFileType(file.name);
-    if (!fileType) return;
-
-    const reader = new FileReader();
-
-    reader.onload = (evt) => {
-      this.loadScene(evt.target.result, fileType);
-      const fileInput = document.getElementById('fileopen');
-      if (fileInput) {
-        fileInput.value = '';
-      }
-    };
-
-    if (fileType === 'obj') {
-      reader.readAsText(file);
     } else {
-      reader.readAsArrayBuffer(file);
+
+      Multimesh.RENDER_HINT = Multimesh.PICKING;
+      this._sculptManager.preUpdate();
+
+      if (action === Enums.Action.SCULPT_EDIT) {
+        Multimesh.RENDER_HINT = Multimesh.SCULPT;
+        this._sculptManager.update(this);
+        if (this.getMesh().isDynamic)
+          this._gui.updateMeshInfo();
+      }
+    }
+
+    this._lastMouseX = mouseX;
+    this._lastMouseY = mouseY;
+    this.renderSelectOverRtt();
+  }
+
+  start() {
+    super.start();
+
+    // Load persisted plugins
+    if (this._pluginManager) {
+      this._pluginManager.loadPersisted().catch((e) => {
+        console.error('Error loading persisted plugins:', e);
+      });
     }
   }
 }
