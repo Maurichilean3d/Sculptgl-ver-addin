@@ -3,15 +3,17 @@
 
 <head>
   <meta charset='utf-8' />
+  <meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'>
   <meta name='description' content='SculptGL is a small sculpting application powered by JavaScript and webGL.'>
+  <meta name='viewport' content='width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no' />
   <meta name='author' content='stéphane GINIER'>
   <meta name='mobile-web-app-capable' content='yes'>
   <meta name='apple-mobile-web-app-capable' content='yes'>
 
   <title> SculptGL - A WebGL sculpting app </title>
 
-  <link href='https://fonts.googleapis.com/css?family=Open+Sans:400,600' rel='stylesheet' type='text/css'>
-  <link rel='stylesheet' href='css/yagui.css' type='text/css' />
+  <link rel='stylesheet' type='text/css' href='https://fonts.googleapis.com/css?family=Open+Sans:400,600'>
+  <link rel='stylesheet' type='text/css' href='css/yagui.css' />
 
   <script>
   'use strict';
@@ -19,7 +21,7 @@
   window.sketchfabOAuth2Config = {
     hostname: 'sketchfab.com',
     client_id: 'OWoAmrd1QCS9wB54Ly17rMl2i5AHGvDNfmN4pEUH',
-    redirect_uri: 'https://stephaneginier.com/sculptgl/authSuccess.html'
+    redirect_uri: window.location.origin + '/authSuccess.html'
   };
   
   window.addEventListener('load', function () {
