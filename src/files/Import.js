@@ -1,11 +1,13 @@
-import ImportOBJ from './ImportOBJ';
-import ImportSGL from './ImportSGL';
-import ImportSTL from './ImportSTL';
-import ImportPLY from './ImportPLY';
-import ImportGLB from './ImportGLB';
+import ImportOBJ from 'files/ImportOBJ';
+import ImportSGL from 'files/ImportSGL';
+import ImportPLY from 'files/ImportPLY';
+import ImportSTL from 'files/ImportSTL';
 
-var Import = {};
-
-Object.assign(Import, ImportOBJ, ImportSGL, ImportSTL, ImportPLY, ImportGLB);
+var Import = {
+  importOBJ: ImportOBJ.importOBJ,
+  importSGL: ImportSGL.importSGL,
+  importPLY: ImportPLY.importPLY,
+  importSTL: ImportSTL.importSTL
+};
 
 export default Import;

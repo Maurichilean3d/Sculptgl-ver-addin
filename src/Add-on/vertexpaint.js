@@ -125,8 +125,4 @@ class VertexPaintPlugin extends Plugin {
   }
 }
 
-if (typeof window !== 'undefined' && !window.SculptGLPlugin) {
-  window.SculptGLPlugin = VertexPaintPlugin;
-}
-
 export default VertexPaintPlugin;
