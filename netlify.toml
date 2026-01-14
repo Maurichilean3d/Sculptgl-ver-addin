@@ -1,0 +1,12 @@
+[build]
+  command = "npm run website"
+  publish = "app"
+
+[build.environment]
+  NODE_VERSION = "18"
+  NODE_OPTIONS = "--openssl-legacy-provider"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
