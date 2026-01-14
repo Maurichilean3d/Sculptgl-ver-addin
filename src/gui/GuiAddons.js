@@ -32,7 +32,7 @@ class GuiAddons {
     const pm = this._ensurePluginManager();
     if (!pm) return;
 
-    const url = window.prompt('URL del plugin (debe ser ES module y permitir CORS):');
+    const url = window.prompt('URL del plugin (ES module con CORS o script que exponga window.SculptGLPlugin):');
     if (!url) return;
 
     try {
@@ -40,7 +40,7 @@ class GuiAddons {
       window.alert('Plugin instalado. Si el plugin no aparece, revisa CORS/URL. Queda guardado para próximos inicios.');
     } catch (e) {
       console.error(e);
-      window.alert('No se pudo instalar el plugin desde URL.');
+      window.alert('No se pudo instalar el plugin desde URL. Verificá que sea ES module con CORS o defina window.SculptGLPlugin.');
     }
 
     this.openManager();
@@ -66,7 +66,7 @@ class GuiAddons {
         window.alert('Plugin instalado desde archivo. Queda guardado para próximos inicios.');
       } catch (e) {
         console.error(e);
-        window.alert('No se pudo instalar el plugin desde archivo.');
+        window.alert('No se pudo instalar el plugin desde archivo. Asegurate de exportar default o definir window.SculptGLPlugin.');
       }
       this.openManager();
     };
