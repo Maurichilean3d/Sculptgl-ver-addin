@@ -1,21 +1,16 @@
 /**
- * VertexPaint Plugin - Ejemplo de plugin funcional
- * Este plugin pinta vértices en lugar de esculpir.
+ * VertexTint Plugin - Variante simple para teñir vértices.
+ * Útil como ejemplo de plugin legacy o ES module.
  */
 
 import Plugin from '../plugins/Plugin';
 
-class VertexPaintPlugin extends Plugin {
+class VertexTintPlugin extends Plugin {
   constructor(scene) {
     super(scene);
-    this.name = 'VertexPaint';
-
-    // Configuración del plugin
-    this.paintColor = [1.0, 0.0, 0.0]; // Rojo por defecto
-    this.brushRadius = 0.05; // Radio en espacio 3D
-    this.brushStrength = 0.8;
-
-    // Estado interno
+    this.name = 'VertexTint';
+    this.tintColor = [0.1, 0.6, 1.0];
+    this.tintStrength = 0.35;
     this._painting = false;
   }
 
@@ -36,18 +31,17 @@ class VertexPaintPlugin extends Plugin {
 
   onInput(type, input, picking) {
     if (!this.enabled) return false;
-
     const mesh = picking.getMesh();
     if (!mesh) return false;
 
     if (type === 'start') {
       this._painting = true;
-      this._paintAtPoint(picking);
+      this._tintAtPoint(picking);
       return true;
     }
 
     if (type === 'move' && this._painting) {
-      this._paintAtPoint(picking);
+      this._tintAtPoint(picking);
       return true;
     }
 
@@ -62,7 +56,7 @@ class VertexPaintPlugin extends Plugin {
     return false;
   }
 
-  _paintAtPoint(picking) {
+  _tintAtPoint(picking) {
     const mesh = picking.getMesh();
     const point = picking.getIntersectionPoint();
 
@@ -70,32 +64,23 @@ class VertexPaintPlugin extends Plugin {
 
     const colors = mesh.getColors();
     const verticesXYZ = mesh.getVerticesProxy();
-
-    const radiusSquared = this.brushRadius * this.brushRadius;
+    const radius = this.scene.getSculptManager().getCurrentTool().getScreenRadius() / this.scene.getCanvas().width;
+    const radiusSquared = radius * radius;
     const nbVertices = mesh.getNbVertices();
 
     let modified = false;
 
     for (let i = 0; i < nbVertices; i++) {
       const ind = i * 3;
-      const vx = verticesXYZ[ind];
-      const vy = verticesXYZ[ind + 1];
-      const vz = verticesXYZ[ind + 2];
-
-      const dx = vx - point[0];
-      const dy = vy - point[1];
-      const dz = vz - point[2];
+      const dx = verticesXYZ[ind] - point[0];
+      const dy = verticesXYZ[ind + 1] - point[1];
+      const dz = verticesXYZ[ind + 2] - point[2];
       const distSquared = dx * dx + dy * dy + dz * dz;
 
       if (distSquared < radiusSquared) {
-        const dist = Math.sqrt(distSquared);
-        const falloff = 1.0 - (dist / this.brushRadius);
-        const strength = falloff * this.brushStrength;
-
-        colors[ind] += (this.paintColor[0] - colors[ind]) * strength;
-        colors[ind + 1] += (this.paintColor[1] - colors[ind + 1]) * strength;
-        colors[ind + 2] += (this.paintColor[2] - colors[ind + 2]) * strength;
-
+        colors[ind] += (this.tintColor[0] - colors[ind]) * this.tintStrength;
+        colors[ind + 1] += (this.tintColor[1] - colors[ind + 1]) * this.tintStrength;
+        colors[ind + 2] += (this.tintColor[2] - colors[ind + 2]) * this.tintStrength;
         modified = true;
       }
     }
@@ -108,25 +93,17 @@ class VertexPaintPlugin extends Plugin {
     }
   }
 
-  onRender() {
-    // Aquí podrías dibujar el preview del brush, etc.
+  setTintColor(r, g, b) {
+    this.tintColor = [r, g, b];
   }
 
-  setPaintColor(r, g, b) {
-    this.paintColor = [r, g, b];
-  }
-
-  setBrushRadius(radius) {
-    this.brushRadius = Math.max(0.01, radius);
-  }
-
-  setBrushStrength(strength) {
-    this.brushStrength = Math.max(0.0, Math.min(1.0, strength));
+  setTintStrength(strength) {
+    this.tintStrength = Math.max(0.0, Math.min(1.0, strength));
   }
 }
 
 if (typeof window !== 'undefined' && !window.SculptGLPlugin) {
-  window.SculptGLPlugin = VertexPaintPlugin;
+  window.SculptGLPlugin = VertexTintPlugin;
 }
 
-export default VertexPaintPlugin;
+export default VertexTintPlugin;

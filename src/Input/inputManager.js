@@ -39,12 +39,18 @@ class InputManager {
 
   _updateNormalizedCoords(clientX, clientY) {
     const rect = this.canvas.getBoundingClientRect();
-    
-    // SOLUCIÓN DEFINITIVA: 
+    if (!rect.width || !rect.height) return;
+
+    // SOLUCIÓN DEFINITIVA:
     // Calculamos el porcentaje (0.0 a 1.0)
     // Esto es inmune a la densidad de píxeles del dispositivo.
     this.current.nX = (clientX - rect.left) / rect.width;
     this.current.nY = (clientY - rect.top) / rect.height;
+
+    if (this.current.nX < 0) this.current.nX = 0;
+    if (this.current.nX > 1) this.current.nX = 1;
+    if (this.current.nY < 0) this.current.nY = 0;
+    if (this.current.nY > 1) this.current.nY = 1;
   }
 
   _processGesture(e, phase) {
@@ -56,7 +62,7 @@ class InputManager {
       this._updateNormalizedCoords(p.x, p.y);
       
       this.current.isDown = true;
-      this.current.buttons = (e.pointerType === 'mouse') ? e.buttons : 1;
+      this.current.buttons = (p.type === 'mouse') ? (e.buttons || 1) : 1;
       this.current.pointerType = p.type;
       this._updateModifiers(e);
       
@@ -75,6 +81,8 @@ class InputManager {
       this._updateNormalizedCoords(cx, cy);
 
       const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      this.current.pointerType = (p1.type === 'pen' || p2.type === 'pen') ? 'pen' : 'touch';
+      this._updateModifiers(e);
 
       if (phase === 'start' || !this._prevDist) {
         this._prevDist = dist;
@@ -93,12 +101,11 @@ class InputManager {
         this.current.isDown = true;
         if (this.onInput) this.onInput('move', this.current, e);
 
-        // Zoom Threshold
-        if (Math.abs(dist - this._prevDist) > 5.0) {
-            const dir = (dist - this._prevDist) > 0 ? 1 : -1;
-            // Sensibilidad de zoom
-            if (this.onInput) this.onInput('wheel', { ...this.current, wheelDelta: dir }, e);
-            this._prevDist = dist;
+        const denom = Math.max(this._prevDist, 1);
+        const zoomDelta = (dist - this._prevDist) / denom;
+        if (Math.abs(zoomDelta) > 0.004) {
+          if (this.onInput) this.onInput('wheel', { ...this.current, wheelDelta: zoomDelta * 4 }, e);
+          this._prevDist = dist;
         }
       }
     }
@@ -115,16 +122,23 @@ class InputManager {
   _onMove(e) {
     if (e.cancelable) e.preventDefault();
     e.stopPropagation();
-    if (this._pointers.has(e.pointerId)) {
-      const p = this._pointers.get(e.pointerId);
-      p.x = e.clientX; p.y = e.clientY;
+    const events = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [e];
+    for (let i = 0, len = events.length; i < len; ++i) {
+      const ev = events[i];
+      if (this._pointers.has(ev.pointerId)) {
+        const p = this._pointers.get(ev.pointerId);
+        p.x = ev.clientX; p.y = ev.clientY;
+      }
+      if (this._pointers.size === 0) {
+        this.current.isDown = false;
+        this.current.buttons = 0;
+        this.current.pointerType = ev.pointerType || this.current.pointerType;
+        this._updateNormalizedCoords(ev.clientX, ev.clientY);
+        if (this.onInput) this.onInput('hover', this.current, ev);
+        continue;
+      }
+      this._processGesture(ev, 'move');
     }
-    if (this._pointers.size === 0) {
-        this._updateNormalizedCoords(e.clientX, e.clientY);
-        if (this.onInput) this.onInput('hover', this.current, e);
-        return;
-    }
-    this._processGesture(e, 'move');
   }
 
   _onUp(e) {
@@ -143,6 +157,12 @@ class InputManager {
     if (this.onInput) this.onInput('end', this.current, e);
   }
 
+  _onOut(e) {
+    if (this._pointers.has(e.pointerId)) {
+      this._onUp(e);
+    }
+  }
+
   _onWheel(e) {
     if (e.cancelable) e.preventDefault(); e.stopPropagation();
     this._updateNormalizedCoords(e.clientX, e.clientY);
@@ -153,8 +173,11 @@ class InputManager {
   _updateModifiers(e) {
     this.current.altKey = e.altKey; this.current.ctrlKey = e.ctrlKey; this.current.shiftKey = e.shiftKey;
     if (e.pressure !== undefined) {
-        this.current.pressure = e.pressure;
-        if (this.current.pressure === 0 && e.pointerType === 'pen') this.current.pressure = 0.5;
+      this.current.pressure = e.pressure;
+      if (this.current.pressure === 0 && e.pointerType === 'pen') this.current.pressure = 0.5;
+      if (this.current.pressure === 0 && e.pointerType === 'touch') this.current.pressure = 1.0;
+    } else if (e.pointerType === 'touch') {
+      this.current.pressure = 1.0;
     }
   }
 }

@@ -56,7 +56,7 @@ class PluginPanel {
 
     const hint = _el('div', {
       class: 'sgl-plugin-hint',
-      text: 'Nota: habilitar/deshabilitar y desinstalar se aplican al reiniciar. “Limpiar todo” recarga la página.'
+      text: 'Nota: habilitar/deshabilitar y desinstalar se aplican al reiniciar. "Limpiar todo" recarga la página.'
     });
 
     const actions = _el('div', { class: 'sgl-plugin-actions' }, [
@@ -164,13 +164,13 @@ class PluginPanel {
 
   async _installFromUrl() {
     if (!this._pm) return;
-    const url = window.prompt('URL del plugin (ES module con CORS habilitado):');
+    const url = window.prompt('URL del plugin (ES module con CORS o script que exponga window.SculptGLPlugin):');
     if (!url) return;
     try {
       await this._pm.installFromUrl(url);
     } catch (e) {
       console.error(e);
-      window.alert('No se pudo instalar el plugin desde URL.');
+      window.alert('No se pudo instalar el plugin desde URL. Verificá que sea ES module con CORS o defina window.SculptGLPlugin.');
     }
     this._render();
   }
@@ -191,7 +191,7 @@ class PluginPanel {
         await this._pm.installFromFile(file);
       } catch (e) {
         console.error(e);
-        window.alert('No se pudo instalar el plugin desde archivo.');
+        window.alert('No se pudo instalar el plugin desde archivo. Asegurate de exportar default o definir window.SculptGLPlugin.');
       }
       this._render();
     };
