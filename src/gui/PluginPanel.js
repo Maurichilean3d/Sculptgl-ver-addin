@@ -123,20 +123,33 @@ class PluginPanel {
       const name = (p.name || p.id || 'plugin').toString();
       const sub = p.type === 'url' ? (p.source || '') : 'Instalado desde archivo';
       const enabledTxt = p.enabled ? 'ON' : 'OFF';
+      const isActive = this._pm && this._pm._activePluginId === p.id;
+      const activeTxt = isActive ? ' [ACTIVO]' : '';
 
       const row = _el('div', { class: 'sgl-plugin-row' }, [
         _el('div', { class: 'sgl-plugin-meta' }, [
-          _el('div', { class: 'sgl-plugin-name', text: `[${enabledTxt}] ${name}` }),
+          _el('div', { class: 'sgl-plugin-name', text: `[${enabledTxt}] ${name}${activeTxt}` }),
           _el('div', { class: 'sgl-plugin-sub', text: sub })
         ]),
         _el('div', { class: 'sgl-plugin-buttons' }, [
+          p.enabled ? _el('button', { type: 'button', text: isActive ? 'Desactivar' : 'Activar', onclick: () => this._activate(p.id, isActive) }) : null,
           _el('button', { type: 'button', text: p.enabled ? 'Deshabilitar' : 'Habilitar', onclick: () => this._toggle(p.id) }),
           _el('button', { type: 'button', text: 'Desinstalar', onclick: () => this._remove(p.id) })
-        ])
+        ].filter(Boolean))
       ]);
 
       this._list.appendChild(row);
     }
+  }
+
+  _activate(id, isActive) {
+    if (!this._pm) return;
+    if (isActive) {
+      this._pm.deactivate();
+    } else {
+      this._pm.activate(id);
+    }
+    this._render();
   }
 
   async _toggle(id) {
