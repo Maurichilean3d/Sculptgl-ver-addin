@@ -16,8 +16,8 @@ class ToolManager {
       
       onStart: (input) => {
         // --- LOGICA DE TAP FUERA ---
-        // Usamos las coordenadas que SculptGL ya procesó (escaladas e invertidas)
-        // main._mouseX y main._mouseY ya son correctos aquí.
+        // Usamos las coordenadas que SculptGL ya procesó (escaladas en píxeles)
+        // main._mouseX y main._mouseY están en coordenadas de pantalla (Y=0 arriba)
         const mesh = this.main.getMesh();
         const picking = this.main.getPicking();
         

@@ -20,7 +20,6 @@ class SculptGL extends Scene {
     this._lastMouseX = 0;
     this._lastMouseY = 0;
     this._action = Enums.Action.NOTHING;
-    this._pluginHandlingInput = false;
 
     this._isWheelingIn = false;
     this._timerEndWheel = null;
@@ -71,7 +70,7 @@ class SculptGL extends Scene {
 
     if (type === 'wheel') {
       this._mouseX = mouseX;
-      this._mouseY = this._canvasHeight - mouseY;
+      this._mouseY = mouseY;
       this._lastMouseX = mouseX;
       this._lastMouseY = mouseY;
       this.onDeviceWheel(input.wheelDelta);
@@ -80,7 +79,7 @@ class SculptGL extends Scene {
 
     if (type === 'hover') {
       this._mouseX = mouseX;
-      this._mouseY = this._canvasHeight - mouseY;
+      this._mouseY = mouseY;
       this._lastMouseX = mouseX;
       this._lastMouseY = mouseY;
       this.renderSelectOverRtt();
@@ -131,9 +130,9 @@ class SculptGL extends Scene {
     this._lastMouseX = mouseX;
     this._lastMouseY = mouseY;
 
-    // Coordenadas para picking (Y invertido para WebGL)
+    // Coordenadas para picking y esculpido (sin pre-invertir, Camera.unproject lo hace)
     this._mouseX = mouseX;
-    this._mouseY = this._canvasHeight - mouseY;
+    this._mouseY = mouseY;
 
     // ALT + Click Izquierdo = Controles de cámara
     if (input.altKey && input.buttons === 1) {
@@ -184,18 +183,16 @@ class SculptGL extends Scene {
 
         if (pluginHandled) {
           this._action = Enums.Action.NOTHING;
-          this._pluginHandlingInput = true;
           return;
         }
 
         this._action = Enums.Action.SCULPT_EDIT;
         this._sculptManager.start(input.shiftKey);
-        return;
+      } else {
+        // No tocamos: rotar cámara
+        this._action = Enums.Action.CAMERA_ROTATE;
+        this._camera.start(mouseX, mouseY);
       }
-
-      // No tocamos: rotar cámara
-      this._action = Enums.Action.CAMERA_ROTATE;
-      this._camera.start(mouseX, mouseY);
     }
   }
 
@@ -204,23 +201,7 @@ class SculptGL extends Scene {
     const mouseY = input.y;
 
     this._mouseX = mouseX;
-    this._mouseY = this._canvasHeight - mouseY;
-
-    if (this._pluginHandlingInput) {
-      const picking = this.getPicking();
-      const mesh = this.getMesh();
-      if (picking && mesh) {
-        picking.intersectionMouse(mesh, this._mouseX, this._mouseY);
-      }
-      const pluginHandled = this._pluginManager.tryHandleInput('move', input, picking);
-      if (pluginHandled) {
-        this.render();
-        this._lastMouseX = mouseX;
-        this._lastMouseY = mouseY;
-        return;
-      }
-      this._pluginHandlingInput = false;
-    }
+    this._mouseY = mouseY;
 
     if (this._isCameraAction()) {
       Multimesh.RENDER_HINT = Multimesh.CAMERA;
@@ -262,13 +243,9 @@ class SculptGL extends Scene {
   }
 
   onDeviceUp(input) {
-    if (this._pluginHandlingInput || this._pluginManager.hasActivePlugin()) {
+    if (this._pluginManager.hasActivePlugin()) {
       const picking = this.getPicking();
-      if (picking && this.getMesh()) {
-        picking.intersectionMouse(this.getMesh(), this._mouseX, this._mouseY);
-      }
       this._pluginManager.tryHandleInput('end', { ...input, buttons: 0, pressure: 0 }, picking);
-      this._pluginHandlingInput = false;
     }
 
     if (this._action === Enums.Action.SCULPT_EDIT) {

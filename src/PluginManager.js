@@ -12,6 +12,7 @@ function _safeNameFromUrl(url) {
   } catch (e) {
     return 'plugin';
   }
+  return `${prefix}:${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function _idFromUrl(url) {
@@ -23,18 +24,6 @@ function _randomId(prefix) {
     return `${prefix}:${window.crypto.randomUUID()}`;
   }
   return `${prefix}:${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function _looksLikeESModule(code) {
-  if (!code) return false;
-  const hasExport = /\bexport\b/.test(code);
-  const hasImport = /\bimport\b/.test(code);
-  return hasExport || hasImport;
-}
-
-function _wrapLegacyPluginCode(code) {
-  return `${code}
-export default (window.SculptGLPlugin || window.Plugin || window.plugin || window.defaultPlugin);`;
 }
 
 class PluginManager {
@@ -300,8 +289,7 @@ class PluginManager {
     const code = await PluginStore.getCode(meta.id);
     if (!code) throw new Error('Plugin code not found');
 
-    const moduleCode = _looksLikeESModule(code) ? code : _wrapLegacyPluginCode(code);
-    const blob = new Blob([moduleCode], { type: 'text/javascript' });
+    const blob = new Blob([code], { type: 'text/javascript' });
     const url = URL.createObjectURL(blob);
     try {
       return await import(/* webpackIgnore: true */ url);

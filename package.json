@@ -26,12 +26,11 @@
     "node": "18.x"
   },
   "scripts": {
-    "dev": "node_modules/.bin/webpack -w",
+    "dev": "webpack -w",
     "server": "http-server app -p 8080",
-    "build": "NODE_OPTIONS=--openssl-legacy-provider npm run website",
-    "release": "node_modules/.bin/webpack --env release",
-    "webad": "node_modules/.bin/webpack --env webad",
-    "website": "node_modules/.bin/webpack --env website"
+    "release": "webpack --env release",
+    "webad": "webpack --env webad",
+    "website": "webpack --env website"
   },
   "repository": {
     "type": "git",

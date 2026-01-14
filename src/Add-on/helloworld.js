@@ -1,32 +1,38 @@
 /**
- * HelloWorld Plugin - ejemplo mínimo para validar carga de add-ons.
+ * HelloWorld Plugin - Versión corregida (Autónoma)
  */
-
-import Plugin from '../plugins/Plugin';
-
-class HelloWorldPlugin extends Plugin {
+class HelloWorldPlugin {
   constructor(scene) {
-    super(scene);
+    this.scene = scene;
+    this.enabled = false;
     this.name = 'HelloWorld';
+    this.clickCount = 0;
+    this.moveCount = 0;
+    console.log('🎨 HelloWorld Plugin: Cargado correctamente');
   }
 
   onActivate() {
-    super.onActivate();
-    if (typeof window !== 'undefined') {
-      console.log('[HelloWorld] Plugin activo');
-    }
+    this.enabled = true;
+    this.clickCount = 0;
+    this.moveCount = 0;
+    console.log('✅ HelloWorld Plugin: ACTIVADO');
   }
 
   onDeactivate() {
-    super.onDeactivate();
-    if (typeof window !== 'undefined') {
-      console.log('[HelloWorld] Plugin desactivado');
-    }
+    this.enabled = false;
+    console.log(`❌ DESACTIVADO. Clicks: ${this.clickCount}`);
   }
-}
 
-if (typeof window !== 'undefined' && !window.SculptGLPlugin) {
-  window.SculptGLPlugin = HelloWorldPlugin;
+  onInput(type, input, picking) {
+    if (!this.enabled) return false;
+    if (type === 'start') {
+      this.clickCount++;
+      const mesh = picking ? picking.getMesh() : null;
+      console.log(`🖱️ CLICK #${this.clickCount} sobre: ${mesh ? mesh.getName() : 'nada'}`);
+      return true; 
+    }
+    return false;
+  }
 }
 
 export default HelloWorldPlugin;
